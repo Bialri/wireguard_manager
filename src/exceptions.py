@@ -1,0 +1,3 @@
+
+class TemplateError(Exception):
+    pass
