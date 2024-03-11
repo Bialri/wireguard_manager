@@ -9,5 +9,5 @@ docker build -f test.Dockerfile -t wireguard_manager_test_enviroment .
 And run container with mounted src to ```/tests/src``` and tests to ```/tests``` directories
 
 ```shell
-docker container run --cap-add=NET_ADMIN --name test -v ./src:/tests/src  -v ./tests:/tests wireguard_manager_test
+docker container run --cap-add=NET_ADMIN --name test -v ./src:/tests/src  -v ./tests:/tests wireguard_manager_test_enviroment
 ```
