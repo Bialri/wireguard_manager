@@ -129,7 +129,7 @@ class WGInterface(WGUtilsMixin):
     def _get_matching_config_line(configuration_path: Path, option: str) -> str | None:
         with open(configuration_path, 'r') as file:
             for line in file:
-                if option in line:
+                if option == line.split(' ',1)[0]:
                     value = line.split('= ', 1)[1].rstrip()
                     return value
         return None
@@ -139,7 +139,7 @@ class WGInterface(WGUtilsMixin):
         with open(configuration_path, 'r') as file:
             values = []
             for line in file:
-                if option in line:
+                if option == line.split(' ',1)[0]:
                     value = line.split('= ', 1)[1].rstrip()
                     values.append(value)
             return values
@@ -208,7 +208,7 @@ class WGInterface(WGUtilsMixin):
         self.save_config()
         self.update_config()
 
-    def create_peer(self, name:str = None) -> WGPeer:
+    def create_peer(self, name: str = None) -> WGPeer:
         allowed_ips = min(self._free_ips())
         if not allowed_ips:
             raise Exception('No free IPs')
@@ -231,10 +231,10 @@ class WGInterface(WGUtilsMixin):
             return f'{option} = {str(value)}\n'
         return ''
 
-    @staticmethod
-    def _generate_config_lines(option: str, values: list[str]) -> str:
+
+    def _generate_config_lines(self, option: str, values: list[str]) -> str:
         if values:
-            return ''.join([f'{option} = {str(value)}\n' for value in values])
+            return ''.join([self._generate_config_line(option,value) for value in values])
         return ''
 
     def generate_config(self) -> str:
@@ -291,7 +291,8 @@ class WGInterface(WGUtilsMixin):
             return config
 
     def update_config(self) -> None:
-        process = subprocess.Popen(f'wg syncconf {self.name} <(wg-quick strip {self.name})',
+        config_path = os.path.join(self.config_dir, f'{self.name}.conf')
+        process = subprocess.Popen(f'wg syncconf {self.name} <(wg-quick strip {config_path})',
                                    shell=True,
                                    executable='/bin/bash',
                                    stdout=subprocess.PIPE)
@@ -299,11 +300,11 @@ class WGInterface(WGUtilsMixin):
 
     def run_interface(self) -> None:
         config_path = os.path.join(self.config_dir, f'{self.name}.conf')
-        subprocess.run(['wg-quick', 'up', config_path])
+        subprocess.run(['wg-quick', 'up', config_path], capture_output=True)
 
     def stop_interface(self) -> None:
         config_path = os.path.join(self.config_dir, f'{self.name}.conf')
-        subprocess.run(['wg-quick', 'down', config_path])
+        subprocess.run(['wg-quick', 'down', config_path], capture_output=True)
 
 
 def load_config(configuration_path: Path | str) -> WGInterface:
