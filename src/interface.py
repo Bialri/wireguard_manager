@@ -1,5 +1,5 @@
 import ipaddress
-
+from collections import Counter
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 import codecs
@@ -19,13 +19,15 @@ class WGInterface(WGUtilsMixin):
 
     def __init__(self,
                  interface_name: str = None,
-                 address: ipaddress.IPv4Network | str = None,
+                 network: ipaddress.IPv4Network | str = None,
+                 address: ipaddress.IPv4Address | str = None,
                  listen_port: int = None,
                  private_key: X25519PrivateKey = None,
                  mtu: int = None,
                  post_up_commands: list[str] = None,
                  post_down_commands: list[str] = None,
                  peers: list[WGPeer] = None,
+                 peers_prefix: int = 32,
                  config_dir: Path | str = None) -> None:
         """
         Interface initialization.
@@ -42,8 +44,11 @@ class WGInterface(WGUtilsMixin):
 
         """
         self.name = interface_name
+        if isinstance(network, str):
+            network = ipaddress.ip_network(network)
+        self.network = network
         if isinstance(address, str):
-            address = ipaddress.ip_network(address, strict=False)
+            address = ipaddress.ip_address(address)
         self.address = address
         self.listen_port = listen_port
         self.private_key = private_key
@@ -59,6 +64,7 @@ class WGInterface(WGUtilsMixin):
             self.peers = []
         if isinstance(config_dir, str):
             config_dir = Path(config_dir)
+        self.peers_prefix = peers_prefix
         self.config_dir = config_dir
 
     @classmethod
@@ -81,7 +87,8 @@ class WGInterface(WGUtilsMixin):
                    config_dir: Path | str,
                    mtu: int = None,
                    post_up_command_templates: list[str] = None,
-                   post_down_command_templates: list[str] = None) -> "WGInterface":
+                   post_down_command_templates: list[str] = None,
+                   peers_prefix: int = 32) -> "WGInterface":
         """
         Create new interface, which not conflict with others, with given size of subnetwork.
         Args:
@@ -97,7 +104,7 @@ class WGInterface(WGUtilsMixin):
 
         """
         return create_new_interface(prefix, network_prefix, config_dir, mtu, post_up_command_templates,
-                                    post_down_command_templates)
+                                    post_down_command_templates, peers_prefix)
 
     def delete_config(self) -> None:
         """
@@ -129,7 +136,7 @@ class WGInterface(WGUtilsMixin):
     def _get_matching_config_line(configuration_path: Path, option: str) -> str | None:
         with open(configuration_path, 'r') as file:
             for line in file:
-                if option == line.split(' ',1)[0]:
+                if option == line.split(' ', 1)[0]:
                     value = line.split('= ', 1)[1].rstrip()
                     return value
         return None
@@ -139,15 +146,22 @@ class WGInterface(WGUtilsMixin):
         with open(configuration_path, 'r') as file:
             values = []
             for line in file:
-                if option == line.split(' ',1)[0]:
+                if option == line.split(' ', 1)[0]:
                     value = line.split('= ', 1)[1].rstrip()
                     values.append(value)
             return values
 
-    def _config_address(self, configuration_path: Path) -> ipaddress.IPv4Network | None:
+    def _config_network(self, configuration_path: Path) -> ipaddress.IPv4Network | None:
         value = self._get_matching_config_line(configuration_path, 'Address')
         if value:
             return ipaddress.ip_network(value, strict=False)
+        return None
+
+    def _config_address(self, configuration_path: Path) -> ipaddress.IPv4Address | None:
+        value = self._get_matching_config_line(configuration_path, 'Address')
+        if value:
+            without_prefix = value.split('/', 1)[0]
+            return ipaddress.ip_address(without_prefix)
         return None
 
     @staticmethod
@@ -194,11 +208,19 @@ class WGInterface(WGUtilsMixin):
                 peers.append(peer)
             return peers
 
-    def _free_ips(self) -> list[ipaddress.IPv4Network]:
-        ip_range = list(self.address.subnets(new_prefix=32))[1:]
-        occupied_addresses = [peer.allowed_ips for peer in self.peers]
-        ip_range = list(filter(lambda x: x not in occupied_addresses, ip_range))
-        return ip_range
+    def _set_most_common_peers_prefix(self):
+        prefixes = [peer.allowed_ips.prefixlen for peer in self.peers]
+        if prefixes:
+            counter = Counter(prefixes)
+            return counter.most_common(1)[0][0]
+        return 32
+
+    def _free_ip(self) -> list[ipaddress.IPv4Network]:
+        ip_range = list(self.network.hosts())
+        occupied_addresses = [peer.allowed_ips.network_address for peer in self.peers]
+        occupied_addresses.append(self.address)
+        ip = min(list(filter(lambda x: x not in occupied_addresses, ip_range)))
+        return ip
 
     def add_peer(self, peer) -> None:
         self.peers.append(peer)
@@ -209,9 +231,9 @@ class WGInterface(WGUtilsMixin):
         self.update_config()
 
     def create_peer(self, name: str = None) -> WGPeer:
-        allowed_ips = min(self._free_ips())
-        if not allowed_ips:
-            raise Exception('No free IPs')
+        address = self._free_ip()
+        address_with_prefix = str(address) + f"/{self.peers_prefix}"
+        allowed_ips = ipaddress.ip_network(address_with_prefix)
         peer = WGPeer(allowed_ips=allowed_ips, name=name)
         peer.set_key()
         self.peers.append(peer)
@@ -231,14 +253,15 @@ class WGInterface(WGUtilsMixin):
             return f'{option} = {str(value)}\n'
         return ''
 
-
-    def _generate_config_lines(self, option: str, values: list[str]) -> str:
+    @classmethod
+    def _generate_config_lines(cls, option: str, values: list[str]) -> str:
         if values:
-            return ''.join([self._generate_config_line(option,value) for value in values])
+            return ''.join([cls._generate_config_line(option, value) for value in values])
         return ''
 
     def generate_config(self) -> str:
-        address = self._generate_config_line('Address', str(self.address))
+        address_with_prefix = str(self.address) + f'/{self.network.prefixlen}'
+        address = self._generate_config_line('Address', address_with_prefix)
         listen_port = self._generate_config_line('ListenPort', str(self.listen_port))
 
         if self.private_key:
@@ -306,6 +329,10 @@ class WGInterface(WGUtilsMixin):
         config_path = os.path.join(self.config_dir, f'{self.name}.conf')
         subprocess.run(['wg-quick', 'down', config_path], capture_output=True)
 
+    def _generate_server_address(self):
+        addresses = iter(self.network.hosts())
+        return next(addresses)
+
 
 def load_config(configuration_path: Path | str) -> WGInterface:
     interface = WGInterface()
@@ -314,6 +341,7 @@ def load_config(configuration_path: Path | str) -> WGInterface:
     if not configuration_path.exists():
         raise Exception
     interface.config_dir = os.path.dirname(configuration_path)
+    interface.network = interface._config_network(configuration_path)
     interface.address = interface._config_address(configuration_path)
     interface.name = interface._config_name(configuration_path)
     interface.listen_port = interface._config_listen_port(configuration_path)
@@ -322,6 +350,7 @@ def load_config(configuration_path: Path | str) -> WGInterface:
     interface.post_up_commands = interface._config_postup_commands(configuration_path)
     interface.post_down_commands = interface._config_postdown_commands(configuration_path)
     interface.peers = interface._config_peers(configuration_path)
+    interface.peers_prefix = interface._set_most_common_peers_prefix()
     return interface
 
 
@@ -330,13 +359,15 @@ def create_new_interface(prefix: str,
                          config_dir: Path | str,
                          mtu: int = None,
                          post_up_command_templates: list[str] = None,
-                         post_down_command_templates: list[str] = None) -> "WGInterface":
+                         post_down_command_templates: list[str] = None,
+                         peers_prefix: int = 32) -> "WGInterface":
     interface = WGInterface()
     if isinstance(config_dir, str):
         config_dir = Path(config_dir)
     interface.config_dir = config_dir
     interface.name = interface._get_free_interface_name(config_dir, prefix)
-    interface.address = interface._get_free_subnetwork(config_dir, network_prefix)
+    interface.network = interface._get_free_subnetwork(config_dir, network_prefix)
+    interface.address = interface._generate_server_address()
     interface.listen_port = interface._get_free_port(config_dir)
     interface.private_key = interface._generate_private_key()
     interface.mtu = mtu
@@ -351,4 +382,5 @@ def create_new_interface(prefix: str,
     else:
         post_down_commands = interface.convert_command_templates(post_down_command_templates)
     interface.post_down_commands = post_down_commands
+    interface.peers_prefix = peers_prefix
     return interface

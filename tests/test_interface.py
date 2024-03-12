@@ -1,6 +1,8 @@
 import pytest
 import os
 import ipaddress
+
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 import codecs
 from pathlib import Path
@@ -10,7 +12,7 @@ from src.interface import WGInterface
 
 def test_interface_read_config_without_peers(tmp_path):
     config = """[Interface]
-Address = 10.0.0.0/24
+Address = 10.0.0.1/24
 PostUp = iptables -I INPUT -p udp --dport 59694 -j ACCEPT
 PostDown = iptables -D INPUT -p udp --dport 59694 -j ACCEPT
 ListenPort = 59694
@@ -26,7 +28,8 @@ PrivateKey = kLZt1UCoxgFR/F9EZThIrUNDo7PQ5Q2vNg/xCpMAEG8="""
     assert interface.peers == []
     assert interface.name == "wg0"
     assert Path(interface.config_dir) == Path(tmp_path)
-    assert interface.address == ipaddress.ip_network("10.0.0.0/24")
+    assert interface.network == ipaddress.ip_network("10.0.0.0/24")
+    assert interface.address == ipaddress.ip_address("10.0.0.1")
     assert interface.listen_port == 59694
     assert interface.mtu is None
     assert interface.private_key.public_key() == private_key.public_key()
@@ -39,7 +42,7 @@ def test_interface_create_new(tmp_path):
                                        28,
                                        tmp_path)
     assert interface.name[:2] == 'wg'
-    assert str(interface.address)[-2:] == '28'
+    assert interface.network.prefixlen == 28
 
 
 def test_interface_save(tmp_path):
@@ -111,8 +114,12 @@ def test_interface_config_peers(tmp_path):
     pass
 
 
-def test_interface_free_ips():
-    pass
+def test_interface_free_ip(tmp_path):
+    interface = WGInterface.create_new('wg',
+                                       28,
+                                       tmp_path)
+    ip = interface._free_ip()
+    assert ip == ipaddress.ip_address('10.0.0.2')
 
 
 def test_interface_create_peer():
@@ -120,12 +127,28 @@ def test_interface_create_peer():
 
 
 def test_interface_generate_config_line():
-    pass
+    line = WGInterface._generate_config_line('test','value')
+    assert line == 'test = value\n'
 
 
 def test_interface_generate_config_lines():
-    pass
+    lines = WGInterface._generate_config_lines('test', ['value','value2'])
+    assert lines == 'test = value\ntest = value2\n'
 
 
-def test_interface_generate_config():
-    pass
+def test_interface_generate_config(tmp_path):
+    interface = WGInterface.create_new('wg',
+                                       28,
+                                       tmp_path)
+    config = interface.generate_config()
+    private_bytes = interface.private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    private_key_encoded = codecs.encode(private_bytes, 'base64').decode('utf8').strip()
+    expected_config = f"""[Interface]
+Address = 10.0.0.1/28
+ListenPort = {interface.listen_port}
+PrivateKey = {private_key_encoded}\n\n\n"""
+    assert expected_config == config
