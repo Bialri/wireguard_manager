@@ -8,16 +8,6 @@ class WGUtilsMixin:
     """
     Wireguard Utils methods to manage interfaces and execute with common wireguard functions
     """
-    @staticmethod
-    def _generate_private_key() -> X25519PrivateKey:
-        """
-        Generate wireguard private key.
-
-        Returns:
-            X25519PrivateKey: Wireguard private key.
-
-        """
-        return X25519PrivateKey.generate()
 
     @staticmethod
     def _get_host_ip() -> str:
@@ -88,46 +78,6 @@ class WGUtilsMixin:
                         ports.append(int(port))
         return ports
 
-    @classmethod
-    def _get_free_port(cls,
-                       config_dir: Path,
-                       range_start: int = 51820,
-                       range_end: int = 65535) -> int:
-        """
-        Get free port in range allocated for interfaces.
-        Args:
-            config_dir(Path): Directory, contains interfaces configurations.
-            range_start(int): Ports, allocated for interfaces, range start.
-            range_end(int): Ports, allocated for interfaces, range end.
-
-        Returns:
-            int: First available port in range.
-
-        """
-        existing_ports = cls._get_interfaces_ports(config_dir)
-        port_range = range(range_start, range_end)
-        for port in port_range:
-            if port not in existing_ports:
-                return port
-
-    @classmethod
-    def _get_free_subnetwork(cls, config_dir: Path, network_prefix: int) -> ipaddress.IPv4Network:
-        """
-        Get free subnetwork with given prefix.
-        Args:
-            config_dir(Path): Directory, contains interfaces configurations.
-            network_prefix(int): Subnetwork size need to be allocated.
-
-        Returns:
-            IPv4Network: Allocated free subnetwork.
-
-        """
-        local_network = ipaddress.ip_network('10.0.0.0/8')
-        subnets = local_network.subnets(new_prefix=network_prefix)
-        existing_subnets = cls._get_interfaces_addresses(config_dir)
-        for subnet in subnets:
-            if not any(subnet.overlaps(existing_subnet) for existing_subnet in existing_subnets):
-                return subnet
 
     @classmethod
     def _get_free_interface_name(cls, config_dir: Path, prefix: str) -> str:

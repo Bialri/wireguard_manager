@@ -1,1 +1,4 @@
 .DS_STORE
+wireguard_manager.egg-info
+dist
+build
