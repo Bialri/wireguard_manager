@@ -200,7 +200,9 @@ class WGConfig(WGUtilsMixin):
         else:
             self.name = None
         self.interface_config = interface_config
-        self.peer_configs = peer_configs
+        self.peer_configs = []
+        if peer_configs:
+            self.peer_configs = peer_configs
 
     @classmethod
     def load(cls, path: os.PathLike):

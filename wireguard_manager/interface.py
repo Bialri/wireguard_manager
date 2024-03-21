@@ -89,8 +89,11 @@ class WGInterface(WGUtilsMixin):
         occupied_addresses = []
         if self.config.peer_configs:
             occupied_addresses = [peer.allowed_ips_address for peer in self.config.peer_configs]
-            occupied_addresses.append(self.config.interface_config.address)
-        ip = min(list(filter(lambda x: x not in occupied_addresses, ip_range)))
+        occupied_addresses.append(self.config.interface_config.address)
+        available_ips = list(filter(lambda x: x not in occupied_addresses, ip_range))
+        if not available_ips:
+            raise InterfaceError(f"No available address for interface {self.config.name}")
+        ip = min(available_ips)
         return ip
 
     @staticmethod
@@ -114,7 +117,7 @@ class WGInterface(WGUtilsMixin):
             allowed_ips_address = self._free_ip()
             allowed_ips_network = ipaddress.ip_network(f'{allowed_ips_address}/{32}', strict=False)
         else:
-            if allowed_ips_address not in allowed_ips_address:
+            if allowed_ips_address not in allowed_ips_network:
                 raise InterfaceError(f"Address {allowed_ips_address} not in given network {allowed_ips_network}")
             if allowed_ips_address not in self.config.interface_config.network:
                 raise InterfaceError(
