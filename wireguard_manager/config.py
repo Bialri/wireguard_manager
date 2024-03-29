@@ -165,11 +165,13 @@ class WGPeerConfig(WGConfigUtils):
             allowed_ips_address = ipaddress.ip_address(allowed_ips_line.split('/')[0])
         name = cls._get_matching_config_line(peer_section, '#Name')
         private_key = cls._encode_private_key(cls._get_matching_config_line(peer_section, '#PrivateKey'))
-        persistent_keep_alive = int(cls._get_matching_config_line(peer_section, 'PersistentKeepalive'))
+        persistent_keep_alive = cls._get_matching_config_line(peer_section, 'PersistentKeepalive')
+        if persistent_keep_alive:
+            persistent_keep_alive = int(persistent_keep_alive)
         endpoint = cls._get_matching_config_line(peer_section, 'Endpoint')
         return cls(allowed_ips_network, allowed_ips_address, name, private_key, persistent_keep_alive, endpoint)
 
-    def stringify(self):
+    def stringify(self, with_private_key: bool = True):
         allowed_ips_value = f'{self.allowed_ips_address}/{self.allowed_ips_network.prefixlen}'
         allowed_ips_line = self._stringify_config_line('AllowedIPs', allowed_ips_value)
         name_line = self._stringify_config_line('#Name', self.name)
@@ -178,7 +180,8 @@ class WGPeerConfig(WGConfigUtils):
                                                       self._decode_public_key(self.private_key.public_key()))
         persistent_keep_alive_line = self._stringify_config_line("PersistentKeepalive", self.persistent_keep_alive)
         endpoint = self._stringify_config_line("Endpoint", self.endpoint)
-        return f'[Peer]\n{name_line}{allowed_ips_line}{public_key_line}{persistent_keep_alive_line}{endpoint}{private_key_line}'
+        return (f'[Peer]\n{name_line}{allowed_ips_line}{public_key_line}'
+                f'{persistent_keep_alive_line}{endpoint}{private_key_line if with_private_key else ""}')
 
 
 class WGConfig(WGUtilsMixin):
@@ -240,7 +243,7 @@ class WGConfig(WGUtilsMixin):
     def _check_syntax(cls, config: str):
         config_without_comments = '\n'.join(filter(lambda x: '#' not in x, config.split('\n')))
         interface_section = cls._extract_interface_section(config_without_comments)
-        for number, line in enumerate(interface_section.split('\n'),1):
+        for number, line in enumerate(interface_section.split('\n'), 1):
             if not line.isspace() and len(line) != 0:
                 key = line.split(' ', 1)[0]
                 if key not in cls.interface_appropriate_keys:
@@ -250,16 +253,16 @@ class WGConfig(WGUtilsMixin):
         if peer_sections:
             for peer_section in peer_sections:
                 for line in peer_section.split('\n'):
-                    if not line.isspace():
+                    if not line.isspace() and len(line) != 0:
                         key = line.split(' ', 1)[0]
                         if key not in cls.peer_appropriate_keys:
                             raise ConfigSyntaxError(f"Inappropriate peer section key '{key}'")
 
-    def stringify(self) -> str:
+    def stringify(self, with_private_key: bool = True) -> str:
         interface_lines = self.interface_config.stringify()
         peers_lines = ''
         if self.peer_configs:
-            peers_lines = '\n'.join(peer_config.stringify() for peer_config in self.peer_configs)
+            peers_lines = '\n'.join(peer_config.stringify(with_private_key) for peer_config in self.peer_configs)
         return f'{interface_lines}\n\n{peers_lines}'
 
     def save(self):

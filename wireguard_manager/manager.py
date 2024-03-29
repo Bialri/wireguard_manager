@@ -2,11 +2,11 @@ import ipaddress
 import subprocess
 from pathlib import Path
 import os
-import socket
 
 from .interface import WGInterface
 from .utils import WGUtilsMixin
 from .config import WGConfig
+from .exceptions import ManagerError
 
 
 class WGManager(WGUtilsMixin):
@@ -79,6 +79,7 @@ class WGManager(WGUtilsMixin):
         for subnet in subnets:
             if not any(subnet.overlaps(existing_subnet) for existing_subnet in existing_subnets):
                 return subnet
+        raise WGManager(f"No available subnet with prefix '{network_prefix}'")
 
     def _get_free_port(self,
                        range_start: int = 51820,
@@ -152,6 +153,17 @@ class WGManager(WGUtilsMixin):
             if interface.config.name in active_interfaces_names:
                 active_interfaces.append(interface)
         return tuple(active_interfaces)
+
+    def delete_interface(self, interface: WGInterface) -> None:
+        """
+        Gracefully remove interface.
+
+        Raises:
+            FileNotFoundError: if configuration file does not exist
+        """
+        interface.stop()
+        interface.config.delete()
+        self._load_existing_interfaces()
 
     def delete_all(self) -> None:
         for interface in self.interfaces:

@@ -2,19 +2,21 @@ import pytest
 from contextlib import nullcontext as does_not_raise
 import os
 
-from wireguard_manager.config import WGConfig, WGInterfaceConfig
+from wireguard_manager.config import WGConfig, WGInterfaceConfig, WGPeerConfig
 from wireguard_manager.exceptions import ConfigSyntaxError
 
 
 @pytest.mark.parametrize('config_text,expectation',
                          [
                              ('[Interface]\nAddress = 10.0.0.1/24\nPostUp = test\nPostDown = test\nListenPort'
-                              ' = 59694\nPrivateKey = kLZt1UCoxgFR/F9EZThIrUNDo7PQ5Q2vNg/xCpMAEG8=', does_not_raise()),
+                              ' = 59694\nPrivateKey = kLZt1UCoxgFR/F9EZThIrUNDo7PQ5Q2vNg/xCpMAEG8=',
+                              does_not_raise()),
+
                              ('[Interface]\nWrong = test\nAddress = 10.0.0.1/24\nPostUp = test\nPostDown = test'
                               '\nListenPort = 59694\nPrivateKey = kLZt1UCoxgFR/F9EZThIrUNDo7PQ5Q2vNg/xCpMAEG8=',
                               pytest.raises(ConfigSyntaxError))
                          ])
-def test_config_read_config_without_peers(tmp_path, config_text, expectation):
+def test_config_read_without_peers(tmp_path, config_text, expectation):
     test_interface_path = os.path.join(tmp_path, 'wg0.conf')
     with open(test_interface_path, 'w') as file:
         file.write(config_text)
@@ -23,6 +25,28 @@ def test_config_read_config_without_peers(tmp_path, config_text, expectation):
     with expectation:
         interface = WGConfig.load(test_interface_path)
         assert interface.interface_config == interface_config
+
+
+@pytest.mark.parametrize('interface_config_text,peer_config_text,expectation',
+                         [
+                             ('[Interface]\nAddress = 10.0.0.1/24\nPostUp = test\nPostDown = test'
+                              '\nListenPort = 59694\nPrivateKey = kLZt1UCoxgFR/F9EZThIrUNDo7PQ5Q2vNg/xCpMAEG8=',
+                              '[Peer]\n#Name = test\nAllowedIPs = 10.0.0.2/32\n'
+                              '#PrivateKey = 0C3A9UA1Caug3dwlYb/7pTeVdaQqTBToDcqOgr6/y18=',
+                              does_not_raise())
+                         ])
+def test_config_read_with_peers(tmp_path, interface_config_text, peer_config_text, expectation):
+    test_interface_path = os.path.join(tmp_path, 'wg0.conf')
+    text_config = f'{interface_config_text}\n\n{peer_config_text}'
+    with open(test_interface_path, 'w') as file:
+        file.write(text_config)
+
+    interface_config = WGInterfaceConfig.load(interface_config_text)
+    peer_config = WGPeerConfig.load(peer_config_text)
+    with expectation:
+        interface = WGConfig.load(test_interface_path)
+        assert interface.interface_config == interface_config
+        assert interface.peer_configs == [peer_config]
 
 
 def test_config_read_not_existing():

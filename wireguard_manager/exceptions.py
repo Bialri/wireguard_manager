@@ -4,3 +4,6 @@ class InterfaceError(Exception):
 
 class ConfigSyntaxError(Exception):
     pass
+
+class ManagerError(Exception):
+    pass

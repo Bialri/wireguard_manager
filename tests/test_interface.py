@@ -1,6 +1,9 @@
 import ipaddress
 import os.path
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+import codecs
+
 from contextlib import nullcontext as does_not_raise
 import pytest
 
@@ -71,13 +74,37 @@ def test_interface_create_peer_without_options(interface_config):
 def test_interface_create_peer_no_available_ips(interface_config):
     config = WGConfig(interface_config=interface_config)
     interface = WGInterface(config=config)
+    for i in range(253):
+        interface.create_peer(str(i))
     with pytest.raises(InterfaceError):
-        for i in range(257):
-            interface.create_peer(str(i))
+        interface.create_peer('throw exception')
 
-# TODO: finish test
+
 def test_interface_generate_config(interface_config,peer_config):
+    interface_key = interface_config.private_key.public_key()
+    bytes_ = interface_key.public_bytes_raw()
+    interface_key_line = codecs.encode(bytes_, 'base64').decode('utf8').strip()
+
+    peer_key = peer_config.private_key
+    bytes_ = peer_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    peer_key_line = codecs.encode(bytes_, 'base64').decode('utf8').strip()
+    expected = f"""[Interface]
+Address = 10.0.0.2/32
+PrivateKey = {peer_key_line}
+DNS = test
+MTU = 1500
+
+
+[Peer]
+AllowedIPs = 0.0.0.0/0
+PublicKey = {interface_key_line}
+Endpoint = 0.0.0.0:{interface_config.listen_port}
+"""
     config = WGConfig(interface_config=interface_config,peer_configs=[peer_config])
     interface = WGInterface(config=config)
-    interface.generate_peer_config(peer_config,'0.0.0.0')
-    pass
+    config = interface.generate_peer_config(peer_config,'0.0.0.0')
+    assert config == expected

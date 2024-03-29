@@ -52,37 +52,39 @@ class WGInterface(WGUtilsMixin):
             interface.config.interface_config.address = address
         return interface
 
-    def run(self):
-        process = subprocess.run(['wg-quick', 'up', self.config.path], capture_output=True)
-        if not process.returncode:
+    def status(self) -> str:
+        process = subprocess.run(['wg'], capture_output=True)
+        if process.returncode:
             raise InterfaceError(f'wg-quick returned an error:\n{process.stderr}')
+        interfaces = process.stdout.decode('utf-8').rstrip().split(' ')
+        if self.config.name in interfaces:
+            return "Running"
+        return "Inactive"
+
+    def run(self):
+        if self.status() == "Inactive":
+            process = subprocess.run(['wg-quick', 'up', self.config.path], capture_output=True)
+            if process.returncode:
+                raise InterfaceError(f'wg-quick returned an error:\n{process.stderr}')
 
     def update(self) -> None:
         self.config.save()
-        process = subprocess.Popen(f'wg syncconf {self.config.name} <(wg-quick strip {self.config.path})',
+        if self.status() == "Running":
+            process = subprocess.Popen(f'wg syncconf {self.config.name} <(wg-quick strip {self.config.path})',
                                    shell=True,
                                    executable='/bin/bash',
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
-        process.wait()
-        if not process.returncode:
-            raise InterfaceError(f'wg-quick returned an error:\n{process.stderr}')
+            process.wait()
+            if process.returncode:
+                raise InterfaceError(f'wg-quick returned an error:\n{process.stderr}')
 
     def stop(self) -> None:
-        process = subprocess.run(['wg-quick', 'down', self.config.path], capture_output=True)
+        if self.status() == "Running":
+            process = subprocess.run(['wg-quick', 'down', self.config.path], capture_output=True)
 
-        if process.returncode:
-            raise InterfaceError(f'wg-quick returned an error:\n{process.stderr}')
-
-    def delete(self) -> None:
-        """
-        Gracefully remove interface.
-
-        Raises:
-            FileNotFoundError: if configuration file does not exist
-        """
-        self.stop()
-        self.config.delete()
+            if process.returncode:
+                raise InterfaceError(f'wg-quick returned an error:\n{process.stderr}')
 
     def _free_ip(self) -> ipaddress.IPv4Address:
         ip_range = list(self.config.interface_config.network.hosts())
@@ -139,4 +141,4 @@ class WGInterface(WGUtilsMixin):
                                    ipaddress.ip_address('0.0.0.0'),
                                    private_key=self.config.interface_config.private_key,
                                    endpoint=f'{endpoint}:{self.config.interface_config.listen_port}')
-        return WGConfig(interface_config=interface_config, peer_configs=[peer_config]).stringify()
+        return WGConfig(interface_config=interface_config, peer_configs=[peer_config]).stringify(False)
