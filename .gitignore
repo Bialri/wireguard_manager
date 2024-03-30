@@ -2,3 +2,4 @@
 wireguard_manager.egg-info
 dist
 build
+**/.coverage

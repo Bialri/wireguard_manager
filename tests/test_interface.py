@@ -1,5 +1,7 @@
 import ipaddress
 import os.path
+import subprocess
+
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 import codecs
@@ -108,3 +110,48 @@ Endpoint = 0.0.0.0:{interface_config.listen_port}
     interface = WGInterface(config=config)
     config = interface.generate_peer_config(peer_config,'0.0.0.0')
     assert config == expected
+
+
+def test_interface_run(tmp_path,interfaces_configs):
+    config_1 = WGConfig(os.path.join(tmp_path,'wg0.conf'),interfaces_configs[0])
+    config_1.save()
+    interface_1 = WGInterface(config_1)
+
+    config_2 = WGConfig(os.path.join(tmp_path, 'wg1.conf'), interfaces_configs[1])
+    config_2.save()
+    interface_2 = WGInterface(config_2)
+
+    config_3 = WGConfig(os.path.join(tmp_path, 'wg2.conf'), interfaces_configs[2])
+    config_3.save()
+    interface_3 = WGInterface(config_3)
+
+    interface_1.run()
+    interface_2.run()
+
+    process = subprocess.run(['wg', 'show', 'interfaces'], capture_output=True)
+    subprocess.run(['wg-quick', 'down', config_1.path])
+    subprocess.run(['wg-quick', 'down', config_2.path])
+    assert process.stdout.decode('utf-8').rstrip() == "wg0 wg1"
+
+
+def test_interface_stop(tmp_path,interfaces_configs):
+    config_1 = WGConfig(os.path.join(tmp_path, 'wg0.conf'), interfaces_configs[0])
+    config_1.save()
+    interface_1 = WGInterface(config_1)
+
+    config_2 = WGConfig(os.path.join(tmp_path, 'wg1.conf'), interfaces_configs[1])
+    config_2.save()
+    interface_2 = WGInterface(config_2)
+
+    config_3 = WGConfig(os.path.join(tmp_path, 'wg2.conf'), interfaces_configs[2])
+    config_3.save()
+    interface_3 = WGInterface(config_3)
+
+    interface_1.run()
+    interface_2.run()
+    interface_3.run()
+
+    interface_2.stop()
+
+    process = subprocess.run(['wg', 'show', 'interfaces'], capture_output=True)
+    assert process.stdout.decode('utf-8').rstrip() == "wg0 wg2"

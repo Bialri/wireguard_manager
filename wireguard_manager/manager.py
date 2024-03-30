@@ -4,12 +4,10 @@ from pathlib import Path
 import os
 
 from .interface import WGInterface
-from .utils import WGUtilsMixin
 from .config import WGConfig
-from .exceptions import ManagerError
 
 
-class WGManager(WGUtilsMixin):
+class WGManager():
     def __init__(self,
                  default_network_prefix: int,
                  config_dir: Path = '/etc/wireguard',
@@ -143,7 +141,7 @@ class WGManager(WGUtilsMixin):
         interface.config.save()
         self._load_existing_interfaces()
         return interface
-
+# TODO: TEST!
     def get_active_interfaces(self) -> tuple[WGInterface, ...]:
         active_interfaces_names = subprocess.run(['wg', 'show', 'interfaces'], capture_output=True).stdout.decode(
             'utf8').rstrip()
@@ -153,7 +151,7 @@ class WGManager(WGUtilsMixin):
             if interface.config.name in active_interfaces_names:
                 active_interfaces.append(interface)
         return tuple(active_interfaces)
-
+# TODO: TEST
     def delete_interface(self, interface: WGInterface) -> None:
         """
         Gracefully remove interface.

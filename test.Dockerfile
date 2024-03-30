@@ -11,6 +11,6 @@ COPY ./tests/requirements_test.txt /tests/
 
 RUN python3.11 -m pip install -r requirements_test.txt
 
-ENTRYPOINT ["pytest"]
+ENTRYPOINT ["pytest","--cov=wireguard_manager","--cov-report","term-missing"]
 
 

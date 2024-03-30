@@ -4,11 +4,10 @@ import codecs
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives import serialization
 
-from .utils import WGUtilsMixin
 from .exceptions import ConfigSyntaxError
 
 
-class WGConfigUtils():
+class WGConfigUtils:
 
     @staticmethod
     def _get_matching_config_line(config: str, key: str) -> str | None:
@@ -184,7 +183,7 @@ class WGPeerConfig(WGConfigUtils):
                 f'{persistent_keep_alive_line}{endpoint}{private_key_line if with_private_key else ""}')
 
 
-class WGConfig(WGUtilsMixin):
+class WGConfig:
     interface_appropriate_keys = [
         "Address", "ListenPort", "PrivateKey", "DNS", "Table", "MTU",
         "PreUp", "PostUp", "PreDown", "PostDown"

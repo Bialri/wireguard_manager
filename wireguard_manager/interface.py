@@ -3,12 +3,11 @@ import os
 import subprocess
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
-from .utils import WGUtilsMixin
 from .exceptions import InterfaceError
 from .config import WGConfig, WGInterfaceConfig, WGPeerConfig
 
 
-class WGInterface(WGUtilsMixin):
+class WGInterface:
     """
     Implementation of wireguard interface
     """
@@ -53,7 +52,7 @@ class WGInterface(WGUtilsMixin):
         return interface
 
     def status(self) -> str:
-        process = subprocess.run(['wg'], capture_output=True)
+        process = subprocess.run(['wg', 'show', 'interfaces'], capture_output=True)
         if process.returncode:
             raise InterfaceError(f'wg-quick returned an error:\n{process.stderr}')
         interfaces = process.stdout.decode('utf-8').rstrip().split(' ')
@@ -66,7 +65,7 @@ class WGInterface(WGUtilsMixin):
             process = subprocess.run(['wg-quick', 'up', self.config.path], capture_output=True)
             if process.returncode:
                 raise InterfaceError(f'wg-quick returned an error:\n{process.stderr}')
-
+# TODO: TEST!
     def update(self) -> None:
         self.config.save()
         if self.status() == "Running":
